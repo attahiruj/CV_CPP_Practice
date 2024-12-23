@@ -15,12 +15,16 @@ add_executable(cv_cpp main.cpp)
 add_executable(cv_read read_data.cpp)
 add_executable(cv_basic_operations basic_operations.cpp)
 add_executable(cv_draw_data draw_data.cpp)
+add_executable(cv_image_warp image_warp.cpp)
+add_executable(cv_color_detection color_detection.cpp)
 
 # Link OpenCV libraries
 target_link_libraries(cv_cpp ${OpenCV_LIBS})
 target_link_libraries(cv_read ${OpenCV_LIBS})
 target_link_libraries(cv_basic_operations ${OpenCV_LIBS})
 target_link_libraries(cv_draw_data ${OpenCV_LIBS})
+target_link_libraries(cv_image_warp ${OpenCV_LIBS})
+target_link_libraries(cv_color_detection ${OpenCV_LIBS})
 
 # Include OpenCV headers
 # target_include_directories(cv_cpp PRIVATE ${OpenCV_INCLUDE_DIRS})
