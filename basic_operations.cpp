@@ -21,8 +21,8 @@ int main()
   Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
 
   cvtColor(img, gray, COLOR_BGR2GRAY);      // rgb to grayscale
-  GaussianBlur(img, blur, Size(3, 3), 3);   // blur
-  Canny(img, canny, 25, 75);                // edge detection
+  GaussianBlur(gray, blur, Size(3, 3), 3);   // blur
+  Canny(blur, canny, 25, 75);                // edge detection
   dilate(canny, dilated, kernel);           // dilation
   erode(dilated, eroded, kernel);           // erosion
 
