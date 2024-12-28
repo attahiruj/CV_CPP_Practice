@@ -20,6 +20,7 @@ add_executable(cv_color_detection color_detection.cpp)
 add_executable(cv_contour_detection contour_detection.cpp)
 add_executable(cv_face_detection face_detection.cpp)
 add_executable(cv_virtual_paint virtual_paint.cpp)
+add_executable(cv_doc_scanner doc_scanner.cpp)
 
 # Link OpenCV libraries
 target_link_libraries(cv_cpp ${OpenCV_LIBS})
@@ -31,6 +32,7 @@ target_link_libraries(cv_color_detection ${OpenCV_LIBS})
 target_link_libraries(cv_contour_detection ${OpenCV_LIBS})
 target_link_libraries(cv_face_detection ${OpenCV_LIBS})
 target_link_libraries(cv_virtual_paint ${OpenCV_LIBS})
+target_link_libraries(cv_doc_scanner ${OpenCV_LIBS})
 
 # Include OpenCV headers
 # target_include_directories(cv_cpp PRIVATE ${OpenCV_INCLUDE_DIRS})
