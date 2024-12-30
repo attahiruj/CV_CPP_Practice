@@ -13,62 +13,107 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
+#include <optional>
 
 using namespace std;
 using namespace cv;
 
-bool debug = false;
+bool debug = true;
 
+const Scalar CYAN = Scalar(182, 196, 46);
+const Scalar RED = Scalar(84, 0, 255);
+
+// Invalid points type
+vector<Point> invalid_points = {Point(-1, -1)};
+
+
+/**
+ * @brief preprocess function to preprocess image
+ * 
+ * @param input input image
+ * @return Mat preprocessed image
+ */
 Mat preprocess(Mat input)
 {
   Mat gray, blur, canny, dilated;
-  Mat kernel = getStructuringElement(MORPH_RECT, Size(5, 5));
+  Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
 
-  cvtColor(input, gray, COLOR_BGR2GRAY);      // rgb to grayscale
-  GaussianBlur(gray, blur, Size(3, 3), 3);    // blur
-  Canny(blur, canny, 25, 75);                 // edge detection
-  dilate(canny, dilated, kernel);              // dilation
+  int blur_size = 7;
+
+  cvtColor(input, gray, COLOR_BGR2GRAY);        // rgb to grayscale
+  GaussianBlur(gray, blur, Size(blur_size, blur_size), 3);      // blur
+  Canny(blur, canny, 25, 75);                   // edge detection
+  dilate(canny, dilated, kernel);               // dilation
 
   return dilated;
 }
 
+/**
+ * @brief getDocBounds function to get document bounds
+ * 
+ * @param input input image
+ * @return vector<Point> document bounds
+ */
 vector<Point> getDocBounds(Mat input)
 {
   vector<vector<Point>> contours;
   vector<Vec4i> heirarchy;
-  vector<Point> doc_bounds;
+  static vector<Point> prev_doc_identified;
+  int likely_doc = -1;
 
   Mat processed = preprocess(input);
   findContours(processed, contours, heirarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
   vector<vector<Point>> min_polygon(contours.size());   // Minimum bounding box poligon, used to predict shape
-  
+
   for (int i = 0; i < contours.size(); i++) {
-    // skip small contours
-    double area         = contourArea(contours[i]);
-    if (area < 1000)
-      continue;
 
-    // Find minimum polygon
-    double perimeter    = arcLength(contours[i], true);
-    approxPolyDP(contours[i], min_polygon[i], 0.02*perimeter, true);
+    // draw contours
+    double area = contourArea(contours[i]);
 
-    // skip non-quadrilaterals
-    size_t vertex_count = min_polygon[i].size();
-    if (vertex_count != 4) 
-      continue;
-    
-    if (debug)
-      drawContours(input, min_polygon, i, Scalar(0, 0, 255), 2);
+    if (area > 1000) {      // skip small contours
+      // Find minimum polygon, assume quadrilateral is document
+      double perimeter    = arcLength(contours[i], true);
+      approxPolyDP(contours[i], min_polygon[i], 0.02*perimeter, true);
 
-    doc_bounds = min_polygon[i];
+      if (min_polygon[i].size() == 4 && isContourConvex(min_polygon[i])) {
+        likely_doc = i;
+        prev_doc_identified = min_polygon[i];
+      }
+    }
   }
 
-  return doc_bounds;
+  if (likely_doc >= 0) {
+    drawContours(input, min_polygon, likely_doc, CYAN, 2);
+  } else if (prev_doc_identified.size() > 0) {
+    vector<vector<Point>> prev_doc_contour = {prev_doc_identified};
+    drawContours(input, prev_doc_contour, 0, CYAN, 2); 
+  } else {
+    // draw  small X mid screen
+    int x = input.cols / 2;
+    int y = input.rows / 2;
+    line(input, Point(x-50, y-50), Point(x+50, y+50), RED, 2);
+    line(input, Point(x-50, y+50), Point(x+50, y-50), RED, 2);
+
+    return invalid_points;
+  }
+
+  return prev_doc_identified;
 }
 
+/**
+ * @brief sortDocBounds function to sort document bounds
+ * 
+ * @param doc_bounds document bounds
+ * @return vector<Point> sorted document bounds
+ */
 vector<Point> sortDocBounds(vector<Point> doc_bounds)
 {
+  if (doc_bounds.size() != 4) {
+    cout << "Invalid document bounds" << endl;
+    return invalid_points;
+  }
+
   vector<Point> sorted_bounds;
   vector<int> sums, diffs;
   int tl, tr, br, bl;
@@ -91,6 +136,16 @@ vector<Point> sortDocBounds(vector<Point> doc_bounds)
   return sorted_bounds;
 }
 
+/**
+ * @brief wrapDoc function to wrap document image
+ * 
+ * @param input input image
+ * @param doc_bounds document bounds
+ * @param width width of the document
+ * @param height height of the document
+ * @param crop crop the image
+ * @return Mat wrapped document image
+ */
 Mat wrapDoc(Mat input, vector<Point> doc_bounds, float width=0, float height=0, bool crop=true)
 {
   if (doc_bounds.size() != 4) {
@@ -98,11 +153,12 @@ Mat wrapDoc(Mat input, vector<Point> doc_bounds, float width=0, float height=0, 
     return input;
   }
 
-  // default to input size if width and height are not provided
+  // estimate width and height from bounds
   if (width <= 0 || height <= 0) {
-    float scale = 0.6;
-    width = (float) input.cols * scale;
-    height = (float) input.rows * scale;;
+    int max_width = max(doc_bounds[1].x - doc_bounds[0].x, doc_bounds[3].x - doc_bounds[2].x);
+    int max_height = max(doc_bounds[2].y - doc_bounds[0].y, doc_bounds[3].y - doc_bounds[1].y);
+    width = (float) max_width;
+    height = (float) max_height;
   }
 
   Point doc_dim((int)width, (int)height);
@@ -131,16 +187,73 @@ Mat wrapDoc(Mat input, vector<Point> doc_bounds, float width=0, float height=0, 
   return img_warp;
 }
 
+/**
+ * @brief mouseCallback function to capture mouse click position
+ * 
+ * @param event event type
+ * @param xPos 
+ * @param yPos 
+ * @param flags 
+ * @param userdata the point object to store the mouse click position
+ */
+void mouseCallback(int event, int xPos, int yPos, int flags, void* userdata) {
+  Point* p = (Point*)userdata;
+  if (event == cv::EVENT_LBUTTONDOWN) {
+    // Capture x and y coordinates when the left mouse button is pressed
+    p->x = xPos;
+    p->y = yPos;
+    if (debug) std::cout << "Mouse Clicked at: (" << p->x << ", " << p->y << ")" << std::endl;
+  }
+}
+
+
 int main()
 {
-  string path = "./Resources/paper.jpg";
-  vector<Point> doc_bounds;
-  Mat doc_original = imread(path);
+  bool from_camera = true;
+  bool running = true;
 
-  // resize(doc_original, doc_original, Size(), 0.5, 0.5);
+  string window = "Doc Scanner";
+  namedWindow(window, WINDOW_AUTOSIZE);
+
+  Point mouse_click_pos;
+  setMouseCallback(window, mouseCallback, &mouse_click_pos);
+
+  Mat doc_original;
+  Mat doc_scanned;
+  vector<Point> doc_bounds;
+
+  if (from_camera) {
+    VideoCapture cap(1);
+    while(1) {
+      cap.read(doc_original);
+
+      // wait for mouse click to capture image
+      if ( mouse_click_pos.x > 0 && mouse_click_pos.y > 0 )
+        break;
+      
+      if (doc_original.empty())
+        continue;
+      
+      doc_bounds = getDocBounds(doc_original);
+      imshow(window, doc_original);
+      if (waitKey(10) == 'q') {
+        running = false;
+        break;
+      }
+    }
   
-  doc_bounds = getDocBounds(doc_original);
+  } else {
+    string path = "./Resources/paper.jpg";
+    doc_original = imread(path);
+  }
+
+  if (doc_bounds == invalid_points) {
+    cout << "Invalid document bounds" << endl;
+    return -1;
+  }
+
   doc_bounds = sortDocBounds(doc_bounds);
+  doc_scanned = wrapDoc(doc_original, doc_bounds);
 
   if (debug) {
     for (int i = 0; i < doc_bounds.size(); i++) {
@@ -148,11 +261,9 @@ int main()
     }
   }
 
-  Mat doc_scanned = wrapDoc(doc_original, doc_bounds);
-  // imshow("Image", doc_original);
-  imshow("Scanned", doc_scanned);
-
+  imshow(window, doc_scanned);
   waitKey(0);
+
   
   return 0;
 }

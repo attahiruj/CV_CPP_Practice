@@ -23,7 +23,7 @@
 using namespace std;
 using namespace cv;
 
-bool debug = false;
+bool debug = true;
 
 typedef struct marker {
   Scalar color;
